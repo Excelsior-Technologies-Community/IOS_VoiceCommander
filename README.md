@@ -116,33 +116,7 @@ The app automatically detects when you stop speaking (Siri-like behavior):
 - **iOS:** 15.0+
 - **Xcode:** 14.0+
 - **Swift:** 5.9+
-
-### Setup Steps
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/yourusername/VoiceCommander.git
-   cd VoiceCommander
-   ```
-
-2. **Open in Xcode**
-   ```bash
-   open VoiceCommander.xcodeproj
-   ```
-
-3. **Add permissions to `Info.plist`**
-   ```xml
-   <key>NSSpeechRecognitionUsageDescription</key>
-   <string>This app uses speech recognition to understand voice commands.</string>
-   
-   <key>NSMicrophoneUsageDescription</key>
-   <string>This app requires microphone access for voice commands.</string>
-   ```
-
-4. **Build and Run**
-   - Select a target device (physical device recommended)
-   - Press `Cmd + R` to run
-
+ 
 > ⚠️ **Note:** Speech recognition works best on **physical devices**. Simulator may have limited functionality.
 
 ---
