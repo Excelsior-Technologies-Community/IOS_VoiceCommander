@@ -8,8 +8,6 @@
   ![License](https://img.shields.io/badge/License-MIT-yellow.svg)
   
   **A Siri-like voice assistant built with SwiftUI that understands natural language commands**
-  
-  [Features](#-features) • [Demo](#-demo) • [Installation](#-installation) • [Usage](#-usage) • [Documentation](#-documentation)
 
 </div>
 
