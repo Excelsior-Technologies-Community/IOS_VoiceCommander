@@ -10,6 +10,10 @@ import AVFoundation
 import UIKit
 import SwiftUI
 
+import SwiftUI
+import Speech
+import AVFoundation
+
 final class VoiceCommandController: ObservableObject {
 
     // MARK: - UI State
@@ -17,6 +21,9 @@ final class VoiceCommandController: ObservableObject {
     @Published var recognizedText = ""
     @Published var statusMessage = ""
     @Published var hasError = false
+    
+    // New: Tells the View to make the text green
+    @Published var isSuccess = false
     @Published var audioLevel: CGFloat = 0.0
 
     // MARK: - Audio & Speech
@@ -24,8 +31,11 @@ final class VoiceCommandController: ObservableObject {
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
-    private var silenceTimer: Timer?
     private let speaker = AVSpeechSynthesizer()
+    
+    // Timers
+    private var silenceTimer: Timer?
+    private var messageHideWorkItem: DispatchWorkItem?
 
     // MARK: - Permissions
     func requestPermissions() {
@@ -49,6 +59,11 @@ final class VoiceCommandController: ObservableObject {
 
     // MARK: - Start Listening (FINAL VERSION)
     private func startListening() throws {
+        // Reset state
+        cancelMessageHideTimer()
+        statusMessage = "Listening..."
+        isSuccess = false
+        hasError = false
 
         guard let recognizer = speechRecognizer, recognizer.isAvailable else {
             showError("Speech recognition unavailable")
@@ -58,12 +73,12 @@ final class VoiceCommandController: ObservableObject {
         // Always stop before restarting
         stopListening()
 
-        // 🔥 AUDIO SESSION — MUST BE HERE
+        // 🔥 AUDIO SESSION
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(
             .playAndRecord,
             mode: .measurement,
-            options: [.defaultToSpeaker, .allowBluetooth]
+            options: [.defaultToSpeaker, .allowBluetooth, .mixWithOthers]
         )
         try session.setActive(true, options: .notifyOthersOnDeactivation)
 
@@ -71,12 +86,14 @@ final class VoiceCommandController: ObservableObject {
         recognitionRequest?.shouldReportPartialResults = true
 
         let inputNode = audioEngine.inputNode
+        
+        // Remove existing tap if any to prevent crashes
+        inputNode.removeTap(onBus: 0)
 
-        // 🔥 IMPORTANT FIX — format: nil
         inputNode.installTap(
             onBus: 0,
             bufferSize: 1024,
-            format: nil
+            format: inputNode.outputFormat(forBus: 0) // Use native format
         ) { [weak self] buffer, _ in
             guard let self = self else { return }
 
@@ -106,20 +123,12 @@ final class VoiceCommandController: ObservableObject {
                     self.recognizedText = text
                 }
 
-                // 🔁 Auto-stop on silence
+                // 🔁 Auto-stop on silence (1.5 seconds)
                 self.silenceTimer?.invalidate()
                 self.silenceTimer = Timer.scheduledTimer(
                     withTimeInterval: 1.5,
                     repeats: false
                 ) { _ in
-                    DispatchQueue.main.async {
-                        self.processCommand(self.recognizedText)
-                        self.stopListening()
-                    }
-                }
-
-                if result.isFinal {
-                    self.silenceTimer?.invalidate()
                     DispatchQueue.main.async {
                         self.processCommand(self.recognizedText)
                         self.stopListening()
@@ -137,8 +146,6 @@ final class VoiceCommandController: ObservableObject {
 
         DispatchQueue.main.async {
             self.isListening = true
-            self.statusMessage = "Listening…"
-            self.hasError = false
         }
     }
 
@@ -154,7 +161,6 @@ final class VoiceCommandController: ObservableObject {
 
         recognitionRequest?.endAudio()
         recognitionTask?.cancel()
-
         recognitionRequest = nil
         recognitionTask = nil
 
@@ -166,8 +172,12 @@ final class VoiceCommandController: ObservableObject {
 
     // MARK: - Command Router
     private func processCommand(_ text: String) {
-        let command = text.lowercased()
+        let command = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         if command.isEmpty { return }
+
+        // Haptic Feedback for success
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
 
         if handleMath(command) { return }
         if handleSystem(command) { return }
@@ -261,18 +271,43 @@ final class VoiceCommandController: ObservableObject {
         }
     }
 
-    // MARK: - Voice Response
+    // MARK: - Voice Response & Disappear Logic
     private func respond(_ text: String) {
+        // 1. Set text and success state
         statusMessage = text
+        isSuccess = true
+        
+        // 2. Speak
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
         utterance.rate = 0.52
         speaker.speak(utterance)
+        
+        // 3. Schedule disappearance (5 Seconds)
+        cancelMessageHideTimer()
+        
+        let workItem = DispatchWorkItem { [weak self] in
+            withAnimation {
+                self?.statusMessage = ""
+                self?.isSuccess = false
+                self?.recognizedText = ""
+            }
+        }
+        
+        messageHideWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: workItem)
+    }
+
+    private func cancelMessageHideTimer() {
+        messageHideWorkItem?.cancel()
+        messageHideWorkItem = nil
     }
 
     // MARK: - Error
     private func showError(_ message: String) {
         statusMessage = message
         hasError = true
+        isSuccess = false
+        cancelMessageHideTimer()
     }
 }
